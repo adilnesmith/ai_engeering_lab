@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "jarvis"
@@ -16,7 +16,7 @@ dependencies = [
     "langchain-chroma>=0.1,<0.2",
     "langgraph>=0.2,<0.3",
     "chromadb>=0.5,<0.6",
-    "gradio>=4.40,<5.0",
+    "gradio>=5.0,<6.0",
     "pydantic>=2.0,<3.0",
     "ollama>=0.3",
     "python-dotenv>=1.0",
@@ -32,5 +32,6 @@ dev = [
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
-[tool.hatch.build.targets.wheel]
-packages = ["."]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agents*", "db*", "memory*", "tools*", "ui*"]

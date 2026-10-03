@@ -27,6 +27,7 @@ Run with:
 import asyncio
 import uuid
 from datetime import datetime
+from html import escape
 
 import gradio as gr
 
@@ -94,6 +95,39 @@ def get_sidebar_data() -> tuple[list[dict], list[dict]]:
         return [], []
 
 
+def render_tasks_html(tasks: list[dict]) -> str:
+    """Render task sidebar content as HTML."""
+    if not tasks:
+        return "<div style='color:#666; font-size:0.9em;'>No pending tasks.</div>"
+
+    rows = []
+    for task in tasks:
+        rows.append(
+            "<div style='padding:6px 0; border-bottom:1px solid #eee;'>"
+            f"<strong>{escape(task['title'])}</strong><br>"
+            f"<span style='color:#666; font-size:0.8em;'>Due: {escape(task['due'])}</span>"
+            "</div>"
+        )
+    return "".join(rows)
+
+
+def render_notes_html(notes: list[dict]) -> str:
+    """Render note sidebar content as HTML."""
+    if not notes:
+        return "<div style='color:#666; font-size:0.9em;'>No notes yet.</div>"
+
+    rows = []
+    for note in notes:
+        rows.append(
+            "<div style='padding:6px 0; border-bottom:1px solid #eee;'>"
+            f"<strong>{escape(note['title'])}</strong><br>"
+            f"<span style='color:#666; font-size:0.8em;'>Tags: {escape(note['tags'])}</span><br>"
+            f"<span style='color:#999; font-size:0.75em;'>{escape(note['created'])}</span>"
+            "</div>"
+        )
+    return "".join(rows)
+
+
 # ── Core streaming function ───────────────────────────────────────────────────
 
 async def stream_response(
@@ -117,7 +151,8 @@ async def stream_response(
         The empty string clears the input box.
     """
     if not message.strip():
-        yield history, "", *get_sidebar_data()
+        tasks, notes = get_sidebar_data()
+        yield history, "", render_tasks_html(tasks), render_notes_html(notes)
         return
 
     # Graceful degradation: check Ollama before trying to invoke
@@ -127,7 +162,8 @@ async def stream_response(
             {"role": "user", "content": message},
             {"role": "assistant", "content": error_msg},
         ]
-        yield history, "", *get_sidebar_data()
+        tasks, notes = get_sidebar_data()
+        yield history, "", render_tasks_html(tasks), render_notes_html(notes)
         return
 
     if not is_ollama_running():
@@ -141,7 +177,8 @@ async def stream_response(
             {"role": "user", "content": message},
             {"role": "assistant", "content": error_msg},
         ]
-        yield history, "", *get_sidebar_data()
+        tasks, notes = get_sidebar_data()
+        yield history, "", render_tasks_html(tasks), render_notes_html(notes)
         return
 
     # Add user message to history immediately (before waiting for LLM)
@@ -151,7 +188,7 @@ async def stream_response(
 
     # Yield immediately to show the user message in UI before LLM starts
     tasks, notes = get_sidebar_data()
-    yield history, "", tasks, notes
+    yield history, "", render_tasks_html(tasks), render_notes_html(notes)
 
     config = {"configurable": {"thread_id": thread_id}}
     partial_response = ""
@@ -186,7 +223,7 @@ async def stream_response(
                     if tool_indicators:
                         display = "\n".join(tool_indicators) + "\n\n" + partial_response
                     history[-1]["content"] = display
-                    yield history, "", tasks, notes
+                    yield history, "", render_tasks_html(tasks), render_notes_html(notes)
 
             # ── Tool usage indicators ────────────────────────────────────────
             elif event_type == "on_tool_start":
@@ -200,7 +237,7 @@ async def stream_response(
                     else:
                         display = "\n".join(tool_indicators) + "\n\n_Thinking..._"
                     history[-1]["content"] = display
-                    yield history, "", tasks, notes
+                    yield history, "", render_tasks_html(tasks), render_notes_html(notes)
 
         # ── Final update with refreshed sidebar ──────────────────────────────
         # After the graph finishes, refresh the panels with any new data
@@ -223,7 +260,7 @@ async def stream_response(
         if tool_indicators:
             final_display = "\n".join(tool_indicators) + "\n\n" + partial_response
         history[-1]["content"] = final_display
-        yield history, "", tasks, notes
+        yield history, "", render_tasks_html(tasks), render_notes_html(notes)
 
     except Exception as e:
         error_text = str(e)
@@ -235,7 +272,7 @@ async def stream_response(
         else:
             history[-1]["content"] = f"⚠️ An error occurred:\n```\n{error_text}\n```"
         tasks, notes = get_sidebar_data()
-        yield history, "", tasks, notes
+        yield history, "", render_tasks_html(tasks), render_notes_html(notes)
 
 
 # ── New conversation ──────────────────────────────────────────────────────────
@@ -252,12 +289,13 @@ def new_conversation() -> tuple:
     """
     new_thread = f"session-{uuid.uuid4().hex[:8]}"
     tasks, notes = get_sidebar_data()
-    return [], new_thread, tasks, notes
+    return [], new_thread, render_tasks_html(tasks), render_notes_html(notes)
 
 
-def refresh_panels() -> tuple[list, list]:
+def refresh_panels() -> tuple[str, str]:
     """Manually refresh the task and note sidebar panels."""
-    return get_sidebar_data()
+    tasks, notes = get_sidebar_data()
+    return render_tasks_html(tasks), render_notes_html(notes)
 
 
 # ── Build the Gradio UI ───────────────────────────────────────────────────────
@@ -335,13 +373,13 @@ def build_ui() -> gr.Blocks:
 
             # Right column — sidebar panels (takes 1/4 of the width)
             with gr.Column(scale=1):
-                tasks_panel = gr.JSON(
-                    label="📋 Pending Tasks",
-                    value=[],
+                tasks_panel = gr.HTML(
+                    value="<div style='color:#666; font-size:0.9em;'>Loading tasks...</div>",
+                    show_label=False,
                 )
-                notes_panel = gr.JSON(
-                    label="📝 Recent Notes",
-                    value=[],
+                notes_panel = gr.HTML(
+                    value="<div style='color:#666; font-size:0.9em;'>Loading notes...</div>",
+                    show_label=False,
                 )
                 refresh_btn = gr.Button("↻ Refresh", variant="secondary", size="sm")
 
@@ -408,9 +446,13 @@ if __name__ == "__main__":
     print("\n   Opening at: http://localhost:7860\n")
 
     demo = build_ui()
+    # Gradio's launch() probes localhost with HTTP HEAD. That request can hang
+    # or fail on Windows (proxy / IPv6), even after the server is already bound.
+    import gradio.networking as _gradio_net
+    _gradio_net.url_ok = lambda _url: True
     demo.launch(
-        server_name="0.0.0.0",   # accessible on local network
+        server_name="127.0.0.1",
         server_port=7860,
-        share=False,             # set True to get a public gradio.live URL
+        share=False,
         show_error=True,
     )
