@@ -48,7 +48,10 @@ from typing import Annotated
 
 from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_ollama import ChatOllama
-from langgraph.checkpoint.sqlite import SqliteSaver
+try:
+    from langgraph.checkpoint.sqlite import SqliteSaver
+except ImportError:
+    from langgraph_checkpoint_sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition

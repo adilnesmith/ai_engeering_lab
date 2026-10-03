@@ -15,6 +15,7 @@ dependencies = [
     "langchain-ollama>=0.2,<0.3",
     "langchain-chroma>=0.1,<0.2",
     "langgraph>=0.2,<0.3",
+    "langgraph-checkpoint-sqlite>=1.0",
     "chromadb>=0.5,<0.6",
     "gradio>=5.0,<6.0",
     "pydantic>=2.0,<3.0",
