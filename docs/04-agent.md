@@ -123,14 +123,22 @@ LangChain has four message types that flow through the graph:
 
 ---
 
-## Conversation Persistence with SqliteSaver
+## Conversation Persistence with AsyncSqliteSaver
 
 ```python
-from langgraph.checkpoint.sqlite import SqliteSaver
+import aiosqlite
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-checkpointer = SqliteSaver.from_conn_string("./data/jarvis.db")
+connection = aiosqlite.connect("./data/jarvis.db")
+await connection.__aenter__()
+checkpointer = AsyncSqliteSaver(connection)
+await checkpointer.setup()
 graph = builder.compile(checkpointer=checkpointer)
 ```
+
+Jarvis creates this connection lazily through `ensure_checkpoint_ready()` in
+`agents/assistant.py` and `agents/supervisor.py`. This keeps graph imports safe
+before an event loop exists and enables the async `ainvoke` and streaming APIs.
 
 The checkpointer **saves and restores the full state** (all messages) after every step. When you invoke the graph with a `thread_id`, it:
 

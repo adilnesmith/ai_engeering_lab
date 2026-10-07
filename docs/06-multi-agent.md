@@ -233,11 +233,12 @@ python agents/supervisor.py
 python agents/supervisor.py my-session
 ```
 
-The supervisor graph is also exported as `supervisor_graph` for use by the Gradio UI:
+The supervisor module exposes `supervisor_graph` for use by the Gradio UI. It is
+created lazily because it uses the async SQLite checkpointer:
 
 ```python
-# ui/app.py
-from agents.supervisor import supervisor_graph
+import agents.supervisor as supervisor_module
 
-result = await supervisor_graph.ainvoke(...)
+await supervisor_module.ensure_checkpoint_ready()
+result = await supervisor_module.supervisor_graph.ainvoke(...)
 ```

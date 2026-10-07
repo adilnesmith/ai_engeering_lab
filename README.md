@@ -5,7 +5,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-0.2-green?logo=langchain&logoColor=white)
-![Gradio](https://img.shields.io/badge/Gradio-4.40-orange?logo=gradio&logoColor=white)
+![Gradio](https://img.shields.io/badge/Gradio-5.x-orange?logo=gradio&logoColor=white)
 ![Ollama](https://img.shields.io/badge/Ollama-local-purple)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
@@ -32,7 +32,7 @@ Everything runs **locally** — no API keys, no data leaves your machine.
 - **Multi-agent orchestration** — A supervisor routes tasks to specialist agents (notes, tasks, memory), each with focused toolsets and isolated context
 - **Three-tier memory** — Short-term (conversation state), long-term (semantic vector search), and episodic (automatic conversation summarization)
 - **Streaming UI** — Token-by-token response streaming in a Gradio web interface with live task and note panels
-- **Tool use** — 9 LangChain tools the agent calls at runtime to read/write real data
+- **Tool use** — 11 LangChain tools the agent calls at runtime to read/write real data
 - **Fully local** — Powered by Ollama (`llama3.2:3b` + `nomic-embed-text`) — no API cost, complete privacy
 - **Persistent data** — Notes, tasks, and memories survive restarts via SQLite and Chroma
 
@@ -60,7 +60,7 @@ flowchart TD
     TaskAgent --> Compress
     MemoryAgent --> Compress
 
-    Supervisor --> ShortTerm[(Short-term memory\nSqliteSaver checkpointer)]
+    Supervisor --> ShortTerm[(Short-term memory\nAsyncSqliteSaver checkpointer)]
 ```
 
 ---
@@ -74,7 +74,8 @@ flowchart TD
 | **langchain-ollama** | `>=0.2` | `ChatOllama` and `OllamaEmbeddings` integrations |
 | **langchain-chroma** | `>=0.1` | Chroma vector store integration |
 | **Chroma** | `>=0.5` | Local vector database for semantic memory |
-| **Gradio** | `>=4.40` | Web UI with streaming support |
+| **Gradio** | `>=5.0,<6.0` | Web UI with streaming support |
+| **aiosqlite** | `>=0.20` | Async SQLite connection used by LangGraph checkpoints |
 | **Pydantic** | `>=2.0` | Data validation (required by LangChain v0.3+) |
 | **Ollama** | local | Runs `llama3.2:3b` (chat) and `nomic-embed-text` (embeddings) |
 | **SQLite** | stdlib | Notes, tasks, conversation checkpoints |
@@ -127,6 +128,16 @@ make run
 # → http://localhost:7860
 ```
 
+**Optional: seed safe mock data**
+
+```bash
+python tools/generate_mock_data.py
+# → writes 4 tasks and 5 notes to data/mock_jarvis.db
+```
+
+The generator is idempotent and does not touch the live `data/jarvis.db` unless
+you explicitly pass a different `--db-path`.
+
 ---
 
 ## Project Structure
@@ -147,10 +158,13 @@ jarvis/
 │
 ├── tools/
 │   ├── note_tools.py      # 4 LangChain @tools for note management
-│   └── task_tools.py      # 5 LangChain @tools for task management
+│   ├── task_tools.py      # 5 LangChain @tools for task management
+│   └── generate_mock_data.py # Safe local demo/test data generator
 │
 ├── ui/
-│   └── app.py             # Gradio Blocks UI with streaming
+│   ├── app.py             # Gradio Blocks UI with streaming
+│   └── assets/
+│       └── jarvis-avatar.svg # Assistant avatar used by the chat UI
 │
 ├── tests/
 │   ├── test_database.py   # 14 tests — SQLite CRUD

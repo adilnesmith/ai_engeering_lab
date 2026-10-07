@@ -129,7 +129,8 @@ name = "jarvis"
 version = "0.1.0"
 dependencies = [
     "langgraph>=0.2,<0.3",   # like "langgraph": "^0.2.0" in package.json
-    "gradio>=4.40,<5.0",
+    "gradio>=5.0,<6.0",
+    "aiosqlite>=0.20",
 ]
 ```
 
@@ -203,6 +204,15 @@ make run
 ```
 
 This starts the Gradio web UI. Open your browser at **http://localhost:7860**.
+
+To create safe demo records for checking the sidebar, run:
+
+```bash
+python tools/generate_mock_data.py
+```
+
+This writes to `data/mock_jarvis.db` and leaves the live `data/jarvis.db`
+untouched by default.
 
 ---
 

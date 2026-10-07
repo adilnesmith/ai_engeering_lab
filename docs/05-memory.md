@@ -10,7 +10,7 @@ Jarvis has three distinct memory systems, each serving a different purpose:
 
 | Type | What it stores | Lifespan | Technology | Analogy |
 |------|---------------|----------|------------|---------|
-| **Short-term** | All messages in the current conversation | Single session | LangGraph state + SqliteSaver | RAM — fast, temporary |
+| **Short-term** | All messages in the current conversation | Single session | LangGraph state + AsyncSqliteSaver | RAM — fast, temporary |
 | **Long-term** | Facts about the user and their preferences | Forever | Chroma vector DB + embeddings | A notebook the assistant keeps |
 | **Episodic** | Summaries of past conversations | Forever | Chroma vector DB + embeddings | Meeting minutes — compressed records |
 
@@ -20,7 +20,10 @@ Jarvis has three distinct memory systems, each serving a different purpose:
 
 This is just the `messages` list in `AgentState`. Every `HumanMessage`, `AIMessage`, and `ToolMessage` is appended to this list as the conversation progresses.
 
-`SqliteSaver` persists this list to SQLite after every step, keyed by `thread_id`. Starting a new session with the same `thread_id` restores the full history.
+`AsyncSqliteSaver` persists this list to SQLite after every step, keyed by
+`thread_id`. Jarvis initialises it lazily when the async CLI or Gradio request
+first needs the graph. Starting a new session with the same `thread_id` restores
+the full history.
 
 ```python
 # The whole conversation is in state["messages"]

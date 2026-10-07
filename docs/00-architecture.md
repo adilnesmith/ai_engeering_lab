@@ -61,7 +61,7 @@ Two storage systems handle all persistence:
 | `data/jarvis.db` | SQLite (via `sqlite3`) | Notes table, tasks table, LangGraph checkpoints |
 | `data/chroma_db/` | Chroma vector DB | Long-term memories, episodic summaries |
 
-SQLite serves double duty: it stores application data (notes/tasks) AND LangGraph's `SqliteSaver` checkpoints (short-term conversation memory).
+SQLite serves double duty: it stores application data (notes/tasks) AND LangGraph's `AsyncSqliteSaver` checkpoints (short-term conversation memory). The async checkpointer is opened lazily inside the running event loop so both the CLI and Gradio streaming paths work with current LangGraph versions.
 
 ### Layer 2 — Tools (`tools/`)
 
@@ -98,7 +98,7 @@ The supervisor graph is what the UI uses. The single agent in `assistant.py` dem
 app.py → Gradio Blocks → streaming chat + sidebar panels
 ```
 
-The UI is a thin layer — it calls `supervisor_graph.astream_events()` and pipes tokens to the browser. All logic lives in the agent layer.
+The UI is a thin layer — it initialises the supervisor lazily, calls `supervisor_graph.astream_events()`, and pipes tokens to the browser. All logic lives in the agent layer. The sidebar uses escaped HTML cards for readable pending-task and recent-note lists, and the assistant avatar is served from `ui/assets/jarvis-avatar.svg`.
 
 ---
 
