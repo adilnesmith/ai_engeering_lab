@@ -28,6 +28,7 @@ import asyncio
 import uuid
 from datetime import datetime
 from html import escape
+from pathlib import Path
 
 import gradio as gr
 
@@ -36,7 +37,7 @@ from db.database import Database
 
 # Import the supervisor graph — this is the brain behind the UI
 try:
-    from agents.supervisor import supervisor_graph
+    import agents.supervisor as supervisor_module
     GRAPH_AVAILABLE = True
 except Exception as _import_error:
     GRAPH_AVAILABLE = False
@@ -44,6 +45,7 @@ except Exception as _import_error:
 
 # Direct DB access for the sidebar panels
 db = Database(settings.DB_PATH)
+AVATAR_IMAGE = Path(__file__).resolve().parent / "assets" / "jarvis-avatar.svg"
 
 
 # ── Helper: check Ollama ──────────────────────────────────────────────────────
@@ -98,34 +100,55 @@ def get_sidebar_data() -> tuple[list[dict], list[dict]]:
 def render_tasks_html(tasks: list[dict]) -> str:
     """Render task sidebar content as HTML."""
     if not tasks:
-        return "<div style='color:#666; font-size:0.9em;'>No pending tasks.</div>"
+        body = "<p class='jarvis-empty'>No pending tasks yet.</p>"
+    else:
+        rows = []
+        for task in tasks:
+            due = task["due"]
+            due_class = "jarvis-due" if due != "no due date" else "jarvis-muted"
+            rows.append(
+                "<li class='jarvis-list-item'>"
+                f"<strong>{escape(task['title'])}</strong>"
+                f"<span class='{due_class}'>Due: {escape(due)}</span>"
+                "</li>"
+            )
+        body = "<ul class='jarvis-list'>" + "".join(rows) + "</ul>"
 
-    rows = []
-    for task in tasks:
-        rows.append(
-            "<div style='padding:6px 0; border-bottom:1px solid #eee;'>"
-            f"<strong>{escape(task['title'])}</strong><br>"
-            f"<span style='color:#666; font-size:0.8em;'>Due: {escape(task['due'])}</span>"
-            "</div>"
-        )
-    return "".join(rows)
+    return (
+        "<section class='jarvis-sidebar-card' aria-labelledby='pending-tasks-heading'>"
+        "<div class='jarvis-sidebar-heading'>"
+        "<h2 id='pending-tasks-heading'>📋 Pending tasks</h2>"
+        f"<span class='jarvis-count'>{len(tasks)}</span>"
+        "</div>"
+        f"{body}</section>"
+    )
 
 
 def render_notes_html(notes: list[dict]) -> str:
     """Render note sidebar content as HTML."""
     if not notes:
-        return "<div style='color:#666; font-size:0.9em;'>No notes yet.</div>"
+        body = "<p class='jarvis-empty'>No notes saved yet.</p>"
+    else:
+        rows = []
+        for note in notes:
+            tags = escape(note["tags"])
+            rows.append(
+                "<li class='jarvis-list-item'>"
+                f"<strong>{escape(note['title'])}</strong>"
+                f"<span class='jarvis-muted'>Tags: {tags}</span>"
+                f"<time datetime='{escape(note['created'])}'>{escape(note['created'])}</time>"
+                "</li>"
+            )
+        body = "<ul class='jarvis-list'>" + "".join(rows) + "</ul>"
 
-    rows = []
-    for note in notes:
-        rows.append(
-            "<div style='padding:6px 0; border-bottom:1px solid #eee;'>"
-            f"<strong>{escape(note['title'])}</strong><br>"
-            f"<span style='color:#666; font-size:0.8em;'>Tags: {escape(note['tags'])}</span><br>"
-            f"<span style='color:#999; font-size:0.75em;'>{escape(note['created'])}</span>"
-            "</div>"
-        )
-    return "".join(rows)
+    return (
+        "<section class='jarvis-sidebar-card' aria-labelledby='recent-notes-heading'>"
+        "<div class='jarvis-sidebar-heading'>"
+        "<h2 id='recent-notes-heading'>📝 Recent notes</h2>"
+        f"<span class='jarvis-count'>{len(notes)}</span>"
+        "</div>"
+        f"{body}</section>"
+    )
 
 
 # ── Core streaming function ───────────────────────────────────────────────────
@@ -195,13 +218,20 @@ async def stream_response(
     tool_indicators = []
 
     try:
+        from agents.supervisor import ensure_checkpoint_ready
+
+        await ensure_checkpoint_ready()
         # astream_events streams every internal event from the graph:
         #   - on_chat_model_stream: individual tokens from the LLM
         #   - on_tool_start: a tool is about to be called
         #   - on_tool_end: a tool finished executing
         #
         # version="v2" is required for langgraph >= 0.2
-        async for event in supervisor_graph.astream_events(
+        graph = supervisor_module.supervisor_graph
+        if graph is None:
+            raise RuntimeError("Agent graph is not ready")
+
+        async for event in graph.astream_events(
             {"messages": [{"role": "user", "content": message}]},
             config=config,
             version="v2",
@@ -248,7 +278,7 @@ async def stream_response(
             # Graph ran but produced no streaming content — use last message
             # This can happen if the model doesn't stream final synthesis
             try:
-                result = await supervisor_graph.aget_state(config)
+                result = await graph.aget_state(config)
                 if result and result.values.get("messages"):
                     last_msg = result.values["messages"][-1]
                     if hasattr(last_msg, "content") and last_msg.content:
@@ -317,10 +347,27 @@ def build_ui() -> gr.Blocks:
         title="Jarvis — Personal AI Assistant",
         theme=gr.themes.Soft(),
         css="""
-            .jarvis-header { text-align: center; padding: 10px 0; }
+            .jarvis-header { text-align: center; padding: 10px 0 16px; }
             .jarvis-header h1 { font-size: 1.8em; margin: 0; }
             .jarvis-header p  { color: #666; margin: 4px 0 0 0; font-size: 0.9em; }
-            .status-bar { font-size: 0.8em; color: #888; padding: 4px 8px; }
+            .status-bar { font-size: 0.8em; color: #666; padding: 4px 8px; line-height: 1.45; }
+            .jarvis-sidebar-card { border: 1px solid #d9dee8; border-radius: 12px; padding: 14px; margin-bottom: 12px; background: #ffffff; color: #162033; }
+            .jarvis-sidebar-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+            .jarvis-sidebar-heading h2 { color: #162033; font-size: 1rem; margin: 0; }
+            .jarvis-count { min-width: 1.6rem; padding: 2px 7px; border-radius: 999px; background: #eef2ff; color: #4338ca; text-align: center; font-size: .78rem; font-weight: 700; }
+            .jarvis-list { list-style: none; padding: 0; margin: 0; }
+            .jarvis-list-item { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; border-top: 1px solid #edf0f4; font-size: .9rem; line-height: 1.35; }
+            .jarvis-list-item:first-child { border-top: 0; padding-top: 2px; }
+            .jarvis-list-item strong { color: #162033; font-weight: 700; }
+            .jarvis-list-item time { color: #687386; font-size: .76rem; }
+            .jarvis-due { color: #4f46e5; font-size: .78rem; }
+            .jarvis-muted { color: #687386; font-size: .78rem; }
+            .jarvis-empty { color: #687386; font-size: .86rem; margin: 4px 0 0; }
+            @media (max-width: 720px) {
+                .jarvis-header h1 { font-size: 1.5em; }
+                .status-bar { text-align: center; }
+                .jarvis-sidebar-card { margin-top: 10px; }
+            }
         """,
     ) as demo:
 
@@ -349,7 +396,7 @@ def build_ui() -> gr.Blocks:
                     type="messages",        # modern {role, content} format
                     height=520,
                     show_label=False,
-                    avatar_images=(None, "🤖"),   # (user avatar, assistant avatar)
+                    avatar_images=(None, str(AVATAR_IMAGE)),  # (user avatar, assistant avatar)
                     render_markdown=True,
                     bubble_full_width=False,
                 )

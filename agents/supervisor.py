@@ -42,12 +42,13 @@ import asyncio
 import sys
 from typing import Annotated, Literal
 
+import aiosqlite
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 try:
-    from langgraph.checkpoint.sqlite import SqliteSaver
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 except ImportError:
-    from langgraph_checkpoint_sqlite import SqliteSaver
+    from langgraph_checkpoint_sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import create_react_agent
@@ -358,14 +359,43 @@ def build_supervisor_graph(checkpointer=None):
 # ── Module-level graph ────────────────────────────────────────────────────────
 # This is what ui/app.py imports.
 
-_checkpointer = SqliteSaver.from_conn_string(settings.DB_PATH)
-supervisor_graph = build_supervisor_graph(checkpointer=_checkpointer)
+# `from_conn_string()` is a context manager in current langgraph versions.
+# Keep the underlying connection alive for the module-level graph instead of
+# deferring a missing `get_next_version` failure until the first UI request.
+_checkpoint_connection = None
+_checkpointer = None
+_checkpoint_ready = False
+_checkpoint_lock = asyncio.Lock()
+supervisor_graph = None
+
+
+async def ensure_checkpoint_ready() -> None:
+    """Open and initialise the async checkpoint database on first use."""
+    global _checkpoint_connection, _checkpointer, _checkpoint_ready, supervisor_graph
+    if _checkpoint_ready:
+        return
+
+    async with _checkpoint_lock:
+        if _checkpoint_ready:
+            return
+        _checkpoint_connection = aiosqlite.connect(settings.DB_PATH)
+        # Compatibility shim: the installed aiosqlite release exposes the
+        # worker thread directly, while this LangGraph saver asks for the
+        # older `is_alive()` helper.
+        if not hasattr(_checkpoint_connection, "is_alive"):
+            _checkpoint_connection.is_alive = _checkpoint_connection._thread.is_alive
+        _checkpointer = AsyncSqliteSaver(_checkpoint_connection)
+        await _checkpoint_connection.__aenter__()
+        await _checkpointer.setup()
+        supervisor_graph = build_supervisor_graph(checkpointer=_checkpointer)
+        _checkpoint_ready = True
 
 
 # ── CLI runner ────────────────────────────────────────────────────────────────
 
 async def run_cli(thread_id: str = "supervisor-session") -> None:
     """Interactive CLI for testing the supervisor graph."""
+    await ensure_checkpoint_ready()
     config = {"configurable": {"thread_id": thread_id}}
 
     BLUE  = "\033[94m"

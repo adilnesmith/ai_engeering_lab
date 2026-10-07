@@ -46,12 +46,13 @@ import asyncio
 import sys
 from typing import Annotated
 
+import aiosqlite
 from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_ollama import ChatOllama
 try:
-    from langgraph.checkpoint.sqlite import SqliteSaver
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 except ImportError:
-    from langgraph_checkpoint_sqlite import SqliteSaver
+    from langgraph_checkpoint_sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -186,10 +187,30 @@ def build_graph(checkpointer=None):
 # thread_id is the session identifier — like a cookie or session token.
 # Use the same thread_id to continue a conversation, a new one to start fresh.
 
-_checkpointer = SqliteSaver.from_conn_string(settings.DB_PATH)
+_checkpoint_connection = None
+_checkpointer = None
+_checkpoint_ready = False
+_checkpoint_lock = asyncio.Lock()
+graph = None
 
-# Module-level graph — import this in other files (ui/app.py, supervisor.py)
-graph = build_graph(checkpointer=_checkpointer)
+
+async def ensure_checkpoint_ready() -> None:
+    """Open and initialise the async checkpoint database on first use."""
+    global _checkpoint_connection, _checkpointer, _checkpoint_ready, graph
+    if _checkpoint_ready:
+        return
+
+    async with _checkpoint_lock:
+        if _checkpoint_ready:
+            return
+        _checkpoint_connection = aiosqlite.connect(settings.DB_PATH)
+        if not hasattr(_checkpoint_connection, "is_alive"):
+            _checkpoint_connection.is_alive = _checkpoint_connection._thread.is_alive
+        _checkpointer = AsyncSqliteSaver(_checkpoint_connection)
+        await _checkpoint_connection.__aenter__()
+        await _checkpointer.setup()
+        graph = build_graph(checkpointer=_checkpointer)
+        _checkpoint_ready = True
 
 
 # ── CLI runner ────────────────────────────────────────────────────────────────
@@ -204,6 +225,7 @@ async def run_cli(thread_id: str = "cli-session") -> None:
     Args:
         thread_id: Session identifier for conversation persistence.
     """
+    await ensure_checkpoint_ready()
     config = {"configurable": {"thread_id": thread_id}}
 
     # ── ANSI colours for terminal output ──

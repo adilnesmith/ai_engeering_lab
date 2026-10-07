@@ -165,6 +165,11 @@ def check_dependencies() -> bool:
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 async def main() -> None:
+    # Windows PowerShell may default to CP1252, which cannot print the emoji
+    # status markers used by this diagnostic. UTF-8 keeps the check useful in
+    # both modern terminals and redirected CI output.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     print(bold("\n🤖 Jarvis Health Check\n") + "─" * 40)
 
     results = []
